@@ -1,0 +1,25 @@
+name: Project 1 - tablecodec
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-proj1:
+    name: test-proj1 (tablecodec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - name: Show Go version
+        run: go version
+      - name: Run test-proj1
+        run: make test-proj1

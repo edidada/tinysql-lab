@@ -1,0 +1,25 @@
+name: Project 3 - DDL
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-proj3:
+    name: test-proj3 (DDL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - name: Show Go version
+        run: go version
+      - name: Run test-proj3
+        run: make test-proj3
