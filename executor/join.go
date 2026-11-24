@@ -146,14 +146,32 @@ func (e *HashJoinExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
 }
 
 func (e *HashJoinExec) fetchAndBuildHashTable(ctx context.Context) error {
-	// TODO: Implementing the building hash table stage.
-
-	// In this stage, you'll read the data from the inner side executor of the join operator and
-	// then use its data to build hash table.
-
-	// You'll need to store the hash table in `e.rowContainer`
-	// and you can call `newHashRowContainer` in `executor/hash_table.go` to build it.
-	// In this stage you can only assign value for `e.rowContainer` without changing any value of the `HashJoinExec`.
+	// In this stage, we read all the rows from the inner side executor and
+	// store them into a hash row container which is used to probe later.
+	innerTypes := retTypes(e.innerSideExec)
+	keyColIdx := make([]int, len(e.innerKeys))
+	for i := range e.innerKeys {
+		keyColIdx[i] = e.innerKeys[i].Index
+	}
+	hCtx := &hashContext{
+		allTypes:  innerTypes,
+		keyColIdx: keyColIdx,
+	}
+	innerList := chunk.NewList(innerTypes, e.initCap, e.maxChunkSize)
+	e.rowContainer = newHashRowContainer(e.ctx, int(e.innerSideEstCount), hCtx, innerList)
+	for {
+		chk := newFirstChunk(e.innerSideExec)
+		err := Next(ctx, e.innerSideExec, chk)
+		if err != nil {
+			return errors.Trace(err)
+		}
+		if chk.NumRows() == 0 {
+			break
+		}
+		if err = e.rowContainer.PutChunk(chk); err != nil {
+			return errors.Trace(err)
+		}
+	}
 	return nil
 }
 
@@ -241,15 +259,45 @@ func (e *HashJoinExec) fetchAndProbeHashTable(ctx context.Context) {
 }
 
 func (e *HashJoinExec) runJoinWorker(workerID uint, outerKeyColIdx []int) {
-	// TODO: Implement the worker of probing stage.
+	ok, joinResult := e.getNewJoinResult(workerID)
+	if !ok {
+		return
+	}
 
-	// In this method, you read the data from the channel e.outerResultChs[workerID].
-	// Then use `e.join2Chunk` method get the joined result `joinResult`,
-	// and put the `joinResult` into the channel `e.joinResultCh`.
-
-	// You may pay attention to:
-	// 
-	// - e.closeCh, this is a channel tells that the join can be terminated as soon as possible.
+	var (
+		outerResult *chunk.Chunk
+		selected    = make([]bool, 0, chunk.InitialCapacity)
+		hCtx        = &hashContext{
+			allTypes:  retTypes(e.outerSideExec),
+			keyColIdx: outerKeyColIdx,
+		}
+	)
+	// Read and filter outer chunks, then probe the hash table with them.
+	emptyOuterResult := &outerChkResource{
+		dest: e.outerResultChs[workerID],
+	}
+	for ok := true; ok; {
+		select {
+		case <-e.closeCh:
+			return
+		case outerResult, ok = <-e.outerResultChs[workerID]:
+		}
+		if !ok {
+			break
+		}
+		ok, joinResult = e.join2Chunk(workerID, outerResult, hCtx, joinResult, selected)
+		if !ok {
+			break
+		}
+		outerResult.Reset()
+		emptyOuterResult.chk = outerResult
+		e.outerChkResourceCh <- emptyOuterResult
+	}
+	if joinResult == nil {
+		return
+	} else if joinResult.err != nil || (joinResult.chk != nil && joinResult.chk.NumRows() > 0) {
+		e.joinResultCh <- joinResult
+	}
 }
 
 func (e *HashJoinExec) getNewJoinResult(workerID uint) (bool, *hashjoinWorkerResult) {

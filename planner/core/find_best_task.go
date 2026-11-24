@@ -211,9 +211,44 @@ type candidatePath struct {
 // If `x` is not worse than `y` at all factors,
 // and there exists one factor that `x` is better than `y`, then `x` is better than `y`.
 func compareCandidates(lhs, rhs *candidatePath) int {
-	// Project 4-2: your code here
-	// TODO: implement the content according to the header comment.
+	setsResult, comparable := compareColumnSet(lhs.columnSet, rhs.columnSet)
+	if !comparable {
+		return 0
+	}
+	scanResult := compareBool(lhs.isSingleScan, rhs.isSingleScan)
+	matchResult := compareBool(lhs.isMatchProp, rhs.isMatchProp)
+	sum := setsResult + scanResult + matchResult
+	if setsResult >= 0 && scanResult >= 0 && matchResult >= 0 && sum > 0 {
+		return 1
+	}
+	if setsResult <= 0 && scanResult <= 0 && matchResult <= 0 && sum < 0 {
+		return -1
+	}
 	return 0
+}
+
+// compareColumnSet compares two column sets. The last return value indicates
+// whether the two sets are comparable, i.e. one is a subset of the other.
+func compareColumnSet(l, r *intsets.Sparse) (int, bool) {
+	lLen, rLen := l.Len(), r.Len()
+	if lLen < rLen {
+		return -1, l.SubsetOf(r)
+	}
+	if lLen == rLen {
+		return 0, l.SubsetOf(r)
+	}
+	return 1, r.SubsetOf(l)
+}
+
+// compareBool normalizes the comparison of two booleans to -1, 0 or 1.
+func compareBool(l, r bool) int {
+	if l == r {
+		return 0
+	}
+	if !l {
+		return -1
+	}
+	return 1
 }
 
 func (ds *DataSource) getTableCandidate(path *util.AccessPath, prop *property.PhysicalProperty) *candidatePath {
@@ -273,11 +308,20 @@ func (ds *DataSource) skylinePruning(prop *property.PhysicalProperty) []*candida
 			}
 		}
 
-		// Project 4-2: your code here
-		// TODO: Here is the pruning phase. Will prune the access path which is must worse than others.
-		//       You'll need to implement the content in function `compareCandidates`.
-		//       And use it to prune unnecessary paths.
-		candidates = append(candidates, currentCandidate)
+		pruned := false
+		for i := len(candidates) - 1; i >= 0; i-- {
+			result := compareCandidates(candidates[i], currentCandidate)
+			if result == 1 {
+				pruned = true
+				// We can break here because the current candidate cannot prune others anymore.
+				break
+			} else if result == -1 {
+				candidates = append(candidates[:i], candidates[i+1:]...)
+			}
+		}
+		if !pruned {
+			candidates = append(candidates, currentCandidate)
+		}
 	}
 	return candidates
 }
