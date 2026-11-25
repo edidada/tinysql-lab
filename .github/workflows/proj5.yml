@@ -2,7 +2,11 @@ name: Project 5 - executor
 
 on:
   push:
+    branches:
+      - 'edidada/**'
   pull_request:
+    branches:
+      - 'edidada/**'
   workflow_dispatch:
 
 permissions:

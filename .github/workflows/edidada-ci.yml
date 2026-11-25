@@ -4,7 +4,7 @@ name: edidada-ci (tinysql)
 on:
   push:
     branches:
-      - edidada/course
+      - 'edidada/**'
   workflow_dispatch:
 
 jobs:

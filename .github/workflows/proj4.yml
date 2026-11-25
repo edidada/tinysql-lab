@@ -2,7 +2,11 @@ name: Project 4 - planner
 
 on:
   push:
+    branches:
+      - 'edidada/**'
   pull_request:
+    branches:
+      - 'edidada/**'
   workflow_dispatch:
 
 permissions:
